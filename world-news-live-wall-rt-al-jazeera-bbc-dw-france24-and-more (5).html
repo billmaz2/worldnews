@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>World News Live Wall — RT AJE BBC DW F24 Euronews NHK TRT CGTN Sky</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b0e14; color: #e7ecf3;
+    font-family: system-ui, "Segoe UI", Roboto, sans-serif; overflow: hidden; display: flex; flex-direction: column; }
+  header {
+    height: 42px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; background: #101623; border-bottom: 1px solid #22304a; flex: none;
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .5px; }
+  header .hint { font-size: 11px; color: #7d8aa0; }
+  /* --- selection toolbar --- */
+  #toolbar {
+    flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 6px 14px; background: #101623; border-bottom: 1px solid #22304a;
+    font-size: 11px; color: #7d8aa0;
+  }
+  #toolbar .grp { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  #toolbar label.ch {
+    display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+    background: #16203a; border: 1px solid #22304a; border-radius: 4px;
+    padding: 3px 8px; color: #e7ecf3; user-select: none;
+  }
+  #toolbar label.ch input { accent-color: #3d6dd6; }
+  #toolbar label.ch.off { opacity: .45; }
+  #toolbar select, #toolbar button {
+    background: #22304a; color: #e7ecf3; border: 1px solid #2c3b57;
+    border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px;
+  }
+  #toolbar .preset { color: #7d8aa0; }
+  #toolbar input {
+    background: #16203a; border: 1px solid #22304a; border-radius: 4px;
+    padding: 3px 6px; color: #e7ecf3; font-size: 11px;
+  }
+  #grid {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    gap: 3px; background: #05070b;
+  }
+  .cell { position: relative; background: #000; overflow: hidden; }
+  .cell video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .label {
+    position: absolute; top: 8px; left: 8px; z-index: 3;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    padding: 3px 9px; border-radius: 4px;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+    pointer-events: none;
+  }
+  .status {
+    position: absolute; bottom: 8px; left: 8px; z-index: 3;
+    font-size: 10px; color: #9fb0c8; padding: 2px 7px; border-radius: 4px;
+    background: rgba(0,0,0,.55); pointer-events: none;
+  }
+  .cell .btns { position: absolute; top: 6px; right: 6px; z-index: 4; display: flex; gap: 6px; }
+  .btns button {
+    background: rgba(0,0,0,.55); color: #e7ecf3; border: 1px solid #2c3b57;
+    border-radius: 4px; width: 30px; height: 26px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .btns button:hover { background: #22304a; }
+  .err { position: absolute; inset: 0; display: none; place-items: center; text-align: center;
+    font-size: 12px; color: #ff9c9c; padding: 16px; z-index: 2; }
+  /* --- guide (videos off) view --- */
+  body.guide #grid { overflow-y: auto; }
+  body.guide .cell { aspect-ratio: auto; min-height: 0; display: flex; align-items: center; }
+  body.guide .cell video, body.guide .cell iframe { display: none; }
+  body.guide .cell .btns, body.guide .cell .err { display: none !important; }
+  body.guide .cell .label { position: static; background: none; backdrop-filter: none;
+    font-size: 15px; padding: 14px 10px; width: 100%; text-align: center; }
+  body.guide .cell .status { position: static; margin-top: -8px; font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌍 WORLD NEWS LIVE WALL</h1>
+  <span class="hint">click a cell to focus / click again or Esc to unfocus · dbl-click = fullscreen · 🔊 = unmute ·
+    <button id="proxyBtn" style="background:#22304a;color:#e7ecf3;border:1px solid #2c3b57;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">🛡 proxy: off</button>
+  </span>
+</header>
+
+<div id="toolbar">
+  <span class="preset">Channels:</span>
+  <div class="grp" id="chList"></div>
+  <span class="preset">Columns:</span>
+  <div class="grp">
+    <select id="colsSel">
+      <option value="auto" selected>auto (n × n)</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+    </select>
+  </div>
+  <span class="preset">Presets:</span>
+  <div class="grp">
+    <button data-preset="4">2×2 (first 4)</button>
+    <button data-preset="6">3×2 (first 6)</button>
+    <button data-preset="9">3×3 (first 9)</button>
+    <button data-preset="all">All channels</button>
+  </div>
+  <div class="grp">
+    <button id="guideBtn" title="hide the videos and show only the channel names and status">📺 Guide view</button>
+    <button id="hideBarBtn" title="hide the toolbar to see the videos full-screen">⌃ Hide toolbar</button>
+  </div>
+  <span id="count" style="margin-left:auto;color:#7d8aa0"></span>
+  <div class="grp" style="gap:4px">
+    <input id="addName" placeholder="name (e.g. NDTV)" style="width:110px" />
+    <input id="addUrl" placeholder="m3u8 URL (optional — auto-search by name)" style="width:250px" />
+    <button id="addBtn">＋ add</button>
+    <button id="importBtn" title="load extra news channels from a maintained online list">⬇ import list</button>
+    <select id="importSel" style="display:none"></select>
+  </div>
+</div>
+
+<div id="grid"></div>
+
+<script>
+// Each channel has candidate URLs; the player tries them in order until one works.
+const CHANNELS = [
+  // RT is geo-blocked in the EU (Greece included) and 403s without valid referer/token —
+  // it will likely fail even via proxy. Kept for users elsewhere; remove if unwanted.
+  { name: "RT News", urls: [
+      "https://rt-glb.rttv.com/dvr/rtnews/playlist_4500Kb.m3u8",
+      "https://rt-glb.rttv.com/live/rtnews/playlist.m3u8",
+  ]},
+  { name: "Al Jazeera", urls: [
+      "https://live-hls-apps-aje-v3-fa.getaj.net/AJE/index.m3u8",
+      "https://live-hls-web-aje-fa.thehlive.com/AJE/index.m3u8",
+      "https://live-hls-web-aje.getaj.net/AJE/index.m3u8",
+  ]},
+  { name: "Al Jazeera Arabic", urls: [
+      "https://live-hls-v3-aja.getaj.net/AJA-V3/index.m3u8",
+      "https://live-hls-apps-aja-fa.getaj.net/AJA/index.m3u8",
+      "https://live-hls-web-aja-fa.thehlive.com/AJA/index.m3u8",
+  ]},
+  { name: "France 24 EN", urls: [
+      "https://live.france24.com/hls/live/2037218/F24_EN_HI_HLS/master_5000.m3u8",
+      "https://live.france24.com/hls/live/2037179-b/F24_FR_HI_HLS/master_5000.m3u8",
+  ]},
+  { name: "DW English", urls: [
+      "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/index.m3u8",
+  ]},
+  { name: "Euronews EN", urls: [
+      "https://cdn-euronews.akamaized.net/live/eds/euronews-en/25002/index.m3u8",
+      "https://euronews-euronews-english-1-gb.samsung.wurl.tv/manifest/playlist.m3u8",
+  ]},
+  { name: "Euronews GR", urls: [
+      "https://cdn-euronews.akamaized.net/live/eds/euronews-el/25068/index.m3u8",
+      "https://www.youtube.com/embed/live_stream?channel=UC8HJZNfDPoySgW9DN3YGNaA&autoplay=1&mute=1",
+  ]},
+  { name: "NHK World", urls: [
+      "https://nhkwlive-xjp.akamaized.net/hls/live/2003458/nhkwlive-xjp-en/index.m3u8",
+  ]},
+  { name: "TRT World", urls: [
+      "https://tv-trtworld.medya.trt.com.tr/master.m3u8",
+  ]},
+  { name: "CGTN", urls: [
+      "https://news.cgtn.com/resource/live/english/cgtn-news.m3u8",
+  ]},
+  { name: "Rai News 24", urls: [
+      "https://d3k8wzt41aflvx.cloudfront.net/RAINEWS24/Live.m3u8",
+  ]},
+  { name: "Sky News", urls: [
+      "https://skynews2-plutolive-vo.akamaized.net/cdnhlsskynewsam/1013/latest.m3u8",
+  ]},
+  { name: "BBC News", urls: [
+      "https://vs-hls-push-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/t=3840/v=pv14/b=5070016/main.m3u8",
+      "https://cdnuk001.broadcastcdn.net/KUK-BBCNEWSHD/index.m3u8",
+  ]},
+  { name: "CNN Intl", urls: [
+      "https://d3bp6dwmpbdajl.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-ury0meh5m4nzm/index.m3u8",
+      "https://cnn-cnninternational-1-eu.rakuten.wurl.tv/playlist.m3u8",
+  ]},
+];
+
+// State (persisted in localStorage so your layout survives reloads)
+const store = {
+  get(key, def) { try { const v = JSON.parse(localStorage["wnw_" + key]); return v === null ? def : v; } catch(_) { return def; } },
+  set(key, v) { try { localStorage["wnw_" + key] = JSON.stringify(v); } catch(_) {} },
+};
+let customChannels = store.get("custom", []);   // user-added: [{name, urls:[...]}]
+let importedChannels = store.get("imported", []); // picked from the online list: [{name, urls:[...]}]
+const ALL_CHANNELS = () => [...CHANNELS, ...importedChannels, ...customChannels];
+let selected = store.get("sel", null) || ALL_CHANNELS().map(c => c.name);
+let colsPref  = store.get("cols", "auto");
+let USE_PROXY = false;
+const PROXY = (u) => "https://corsproxy.io/?" + encodeURIComponent(u);
+const mutedState = {}; // per-channel mute preference across rebuilds
+
+const grid = document.getElementById("grid");
+
+/* ---------- toolbar ---------- */
+const chList = document.getElementById("chList");
+function buildToolbar() {
+  chList.innerHTML = "";
+  ALL_CHANNELS().forEach(ch => {
+    const lab = document.createElement("label");
+    lab.className = "ch" + (CHANNELS.includes(ch) ? "" : " extra");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = ch.name;
+    cb.checked = selected.includes(ch.name);
+    cb.addEventListener("change", () => {
+      if (cb.checked && !selected.includes(ch.name)) selected.push(ch.name);
+      else selected = selected.filter(n => n !== ch.name);
+      store.set("sel", selected);
+      rebuild();
+    });
+  // custom/imported channels get a ✕ remove button
+  if (!CHANNELS.includes(ch)) {
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.title = "remove channel";
+    del.style.cssText = "background:none;border:none;color:#ff7d7d;cursor:pointer;font-size:11px";
+    del.addEventListener("click", () => {
+      importedChannels = importedChannels.filter(c => c.name !== ch.name);
+      customChannels   = customChannels.filter(c => c.name !== ch.name);
+      selected = selected.filter(n => n !== ch.name);
+      store.set("imported", importedChannels); store.set("custom", customChannels); store.set("sel", selected);
+      buildToolbar();
+      rebuild();
+    });
+    lab.appendChild(del);
+  }
+  lab.appendChild(cb);
+  lab.appendChild(document.createTextNode(ch.name));
+  chList.appendChild(lab);
+  });
+}
+
+const colsSel = document.getElementById("colsSel");
+colsSel.value = colsPref;
+colsSel.addEventListener("change", () => { colsPref = colsSel.value; store.set("cols", colsPref); layoutGrid(); });
+
+document.querySelectorAll("#toolbar [data-preset]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const p = btn.dataset.preset;
+    if (p === "all") { selected = ALL_CHANNELS().map(c => c.name); colsPref = "auto"; }
+    else {
+      selected = ALL_CHANNELS().slice(0, parseInt(p, 10)).map(c => c.name);
+      colsPref = p === "4" ? "2" : p === "6" ? "3" : p === "9" ? "3" : "auto";
+    }
+    colsSel.value = colsPref;
+    store.set("sel", selected); store.set("cols", colsPref);
+    buildToolbar();
+    rebuild();
+  });
+});
+
+function updateCount() {
+  document.getElementById("count").textContent =
+    `${selected.length} channel${selected.length === 1 ? "" : "s"} on air`;
+}
+
+/* ---------- add / import channels ---------- */
+// fetch + cache the maintained online news playlist (used by import list & name lookup)
+let onlineListCache = null;
+async function getOnlineList() {
+  if (onlineListCache) return onlineListCache;
+  const sources = [
+    "https://iptv-org.github.io/iptv/categories/news.m3u",
+    "https://gist.githubusercontent.com/onigetoc/8f69c978bf64f3f91e25d40cc4599da6/raw",
+  ];
+  let text = "";
+  for (const s of sources) {
+    try { const res = await fetch(s); if (res.ok) { text = await res.text(); if (text.includes("#EXTINF")) break; } }
+    catch(_) {}
+  }
+  const lines = text.split("\n");
+  const found = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("#EXTINF")) {
+      const nm = (lines[i].split(",").pop() || "").trim();
+      const u  = (lines[i + 1] || "").trim();
+      if (nm && (/\.m3u8/i.test(u) || /\.mpd$/i.test(u))) found.push({ name: nm, url: u });
+    }
+  }
+  onlineListCache = found;
+  return found;
+}
+
+document.getElementById("addBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("addBtn");
+  const name = document.getElementById("addName").value.trim();
+  const url  = document.getElementById("addUrl").value.trim();
+  if (!name) { alert("Give the channel a name (URL is optional)."); return; }
+  if (ALL_CHANNELS().some(c => c.name.toUpperCase() === name.toUpperCase())) {
+    alert("A channel with this name already exists."); return;
+  }
+
+  let finalUrl = url;
+  // no URL given → look up the feed by name in the maintained online list
+  if (!finalUrl) {
+    btn.textContent = "…searching";
+    try {
+      const list = await getOnlineList();
+      const q = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      // exact-ish match first, then "contains" match
+      const hit = list.find(c => c.name.toLowerCase().replace(/[^a-z0-9]/g, "") === q)
+               || list.find(c => c.name.toLowerCase().replace(/[^a-z0-9]/g, "").includes(q))
+               || list.find(c => q.includes(c.name.toLowerCase().replace(/[^a-z0-9]/g, "")));
+      if (!hit) {
+        alert(`No stream found for "${name}" in the online channel list.\n\nAdd it manually with a direct .m3u8 URL, or use ⬇ import list to browse all available channels.`);
+        btn.textContent = "＋ add";
+        return;
+      }
+      finalUrl = hit.url;
+    } catch (e) {
+      alert("Couldn't reach the online channel list. Add the channel manually with a direct .m3u8 URL.");
+      btn.textContent = "＋ add";
+      return;
+    }
+    btn.textContent = "＋ add";
+  }
+
+  customChannels.push({ name, urls: [finalUrl] });
+  selected.push(name);
+  store.set("custom", customChannels); store.set("sel", selected);
+  document.getElementById("addName").value = "";
+  document.getElementById("addUrl").value = "";
+  buildToolbar(); rebuild();
+});
+
+// Enter in the name field triggers add
+document.getElementById("addName").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("addBtn").click(); });
+document.getElementById("addUrl").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("addBtn").click(); });
+
+document.getElementById("importBtn").addEventListener("click", async () => {
+  const sel = document.getElementById("importSel");
+  if (sel.style.display === "none") {
+    sel.innerHTML = "<option>loading…</option>";
+    sel.style.display = "";
+    try {
+      const found = (await getOnlineList())
+        .filter(f => !ALL_CHANNELS().some(c => c.name.toUpperCase() === f.name.toUpperCase()));
+      sel.innerHTML = "";
+      const def = document.createElement("option");
+      def.textContent = `— pick a channel (${found.length} available) —`;
+      sel.appendChild(def);
+      found.forEach(f => {
+        const o = document.createElement("option");
+        o.value = f.url; o.textContent = f.name;
+        sel.appendChild(o);
+      });
+      sel.onchange = () => {
+        if (!sel.value || !sel.value.startsWith("http")) return;
+        const nm = sel.options[sel.selectedIndex].textContent;
+        importedChannels.push({ name: nm, urls: [sel.value] });
+        selected.push(nm);
+        store.set("imported", importedChannels); store.set("sel", selected);
+        buildToolbar(); rebuild();
+        sel.selectedIndex = 0;
+      };
+    } catch (e) {
+      sel.innerHTML = "<option>couldn't load list (offline?)</option>";
+    }
+  } else { sel.style.display = "none"; } // toggle
+});
+
+/* ---------- grid layout ---------- */
+function layoutGrid() {
+  const n = grid.children.length;
+  if (!n) return;
+  const cols = (colsPref === "auto")
+    ? Math.ceil(Math.sqrt(n))
+    : Math.min(parseInt(colsPref, 10), n);
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, 1fr)`;
+  applyFocus();
+}
+
+/* ---------- build cells ---------- */
+const activeHls = []; // destroy on rebuild
+
+function rebuild() {
+  activeHls.forEach(h => { try { h.destroy(); } catch(_) {} });
+  activeHls.length = 0;
+  grid.innerHTML = "";
+  updateCount();
+
+  ALL_CHANNELS().filter(ch => selected.includes(ch.name)).forEach(ch => {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.innerHTML = `
+      <video autoplay muted playsinline></video>
+      <span class="label">${ch.name}</span>
+      <span class="status">loading…</span>
+      <div class="btns">
+        <button class="mute" title="mute / unmute">🔇</button>
+        <button class="reload" title="reload stream">↻</button>
+      </div>
+      <div class="err"></div>`;
+    grid.appendChild(cell);
+
+    const video  = cell.querySelector("video");
+    const status = cell.querySelector(".status");
+    const errBox = cell.querySelector(".err");
+    const muteBtn = cell.querySelector(".mute");
+
+    let hls = null, urlIdx = 0, live = false;
+
+    // YouTube embed channels (url points at youtube.com/embed/...)
+    if (ch.urls[urlIdx].includes("youtube.com/embed/")) {
+      cell.innerHTML = `
+        <iframe src="${ch.urls[urlIdx]}" style="width:100%;height:100%;border:0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+        <span class="label">${ch.name}</span>
+        <span class="status">● LIVE (YouTube)</span>`;
+      return;
+    }
+
+    function destroy() { if (hls) { try { hls.destroy(); } catch(_){} hls = null; } }
+
+    function setStatus(t) { status.textContent = t; }
+    function fail(msg) {
+      setStatus("offline");
+      errBox.style.display = "grid";
+      errBox.textContent = msg;
+    }
+
+    function load() {
+      errBox.style.display = "none";
+      live = false;
+      setStatus(`loading… (source ${urlIdx + 1}/${ch.urls.length})`);
+      const src = USE_PROXY ? PROXY(ch.urls[urlIdx]) : ch.urls[urlIdx];
+
+      if (Hls.isSupported()) {
+        destroy();
+        hls = new Hls({ lowLatencyMode: true, backBufferLength: 30 });
+        activeHls.push(hls);
+        hls.loadSource(src);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => { live = true; setStatus("● LIVE"); video.play().catch(()=>{}); });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (!data.fatal) return;
+          if ((data.details === "manifestLoadError" || data.details === "manifestParsingError" ||
+               data.details === "manifestIncompatibleCodecsError") && urlIdx < ch.urls.length - 1) {
+            urlIdx++;
+            setTimeout(load, 300);
+            return;
+          }
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && live) { hls.startLoad(); return; }
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && live) { hls.recoverMediaError(); return; }
+          fail(`${ch.name}: ${data.details}. ` +
+               (urlIdx < ch.urls.length - 1
+                 ? "Trying next source…"
+                 : (USE_PROXY ? "All sources failed. Check the console (F12) for CORS/network details."
+                              : "All direct sources failed — try the 🛡 proxy button in the header (CORS issue).")));
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = src;
+        video.addEventListener("playing", () => { live = true; setStatus("● LIVE"); }, { once: true });
+        video.addEventListener("error", () => fail(`${ch.name}: native HLS failed for this source.`));
+        video.play().catch(()=>{});
+      } else {
+        fail("HLS not supported in this browser.");
+      }
+    }
+
+    function loadAll() { urlIdx = 0; load(); }
+
+    // restore mute preference
+    if (mutedState[ch.name] === false) { video.muted = false; muteBtn.textContent = "🔊"; }
+
+    muteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      video.muted = !video.muted;
+      muteBtn.textContent = video.muted ? "🔇" : "🔊";
+      mutedState[ch.name] = video.muted;
+    });
+    cell.querySelector(".reload").addEventListener("click", (e) => {
+      e.stopPropagation();
+      loadAll();
+    });
+    cell.addEventListener("click", () => {
+      const focused = document.querySelector(".cell.focus");
+      if (focused === cell) { cell.classList.remove("focus"); }
+      else {
+        document.querySelectorAll(".cell.focus").forEach(c => c.classList.remove("focus"));
+        cell.classList.add("focus");
+      }
+      applyFocus();
+    });
+    cell.addEventListener("dblclick", () => {
+      if (cell.requestFullscreen) cell.requestFullscreen().catch(()=>{});
+    });
+
+    loadAll();
+  });
+
+  layoutGrid();
+}
+
+/* ---------- focus ---------- */
+function applyFocus() {
+  const focusOn = !!document.querySelector(".cell.focus");
+  document.querySelectorAll(".cell").forEach(c => {
+    c.style.display = (!focusOn || c.classList.contains("focus")) ? "" : "none";
+    if (focusOn) {
+      c.style.gridColumn = c.classList.contains("focus") ? "1 / -1" : "";
+      c.style.gridRow    = c.classList.contains("focus") ? "1 / -1" : "";
+    } else { c.style.gridColumn = ""; c.style.gridRow = ""; }
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    document.querySelectorAll(".cell.focus").forEach(c => c.classList.remove("focus"));
+    applyFocus();
+  }
+});
+
+/* ---------- guide (videos off) toggle ---------- */
+let guideOn = false;
+const guideBtn = document.getElementById("guideBtn");
+guideBtn.addEventListener("click", () => {
+  guideOn = !guideOn;
+  document.body.classList.toggle("guide", guideOn);
+  guideBtn.textContent = guideOn ? "📺 Guide: ON" : "📺 Guide view";
+  if (guideOn) {
+    // stop all streams to save bandwidth while browsing
+    activeHls.forEach(h => { try { h.destroy(); } catch(_) {} });
+    activeHls.length = 0;
+    grid.querySelectorAll("video").forEach(v => { try { v.pause(); v.removeAttribute("src"); v.load(); } catch(_) {} });
+    grid.querySelectorAll("iframe").forEach(f => { f.src = f.src; }); // reload = pause
+  } else {
+    rebuild(); // start streams again
+  }
+});
+
+/* ---------- hide toolbar toggle ---------- */
+const hideBarBtn = document.getElementById("hideBarBtn");
+const toolbar = document.getElementById("toolbar");
+let barHidden = false;
+hideBarBtn.addEventListener("click", () => { setBar(!barHidden); });
+function setBar(hidden) {
+  barHidden = hidden;
+  toolbar.style.display = hidden ? "none" : "";
+  hideBarBtn.textContent = hidden ? "⌄ Show toolbar" : "⌃ Hide toolbar";
+  if (hidden) {
+    const back = document.createElement("button");
+    back.id = "showBar";
+    back.textContent = "⌄ toolbar";
+    back.style.cssText = "position:fixed;top:6px;left:6px;z-index:30;background:#22304acc;color:#e7ecf3;" +
+      "border:1px solid #2c3b57;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px";
+    back.addEventListener("click", () => { setBar(false); });
+    document.body.appendChild(back);
+  } else {
+    const back = document.getElementById("showBar");
+    if (back) back.remove();
+  }
+  layoutGrid();
+}
+
+/* ---------- proxy toggle ---------- */
+const proxyBtn = document.getElementById("proxyBtn");
+proxyBtn.addEventListener("click", () => {
+  USE_PROXY = !USE_PROXY;
+  proxyBtn.textContent = USE_PROXY ? "🛡 proxy: ON" : "🛡 proxy: off";
+  rebuild(); // simplest reliable way to reload all through the proxy
+});
+
+buildToolbar();
+rebuild();
+</script>
+</body>
+</html>
